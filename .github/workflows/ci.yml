@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -98,6 +99,7 @@ jobs:
             echo "::warning::ACCOUNT_PRIVATE_KEY_1 is not set, using the auto-generated studionet account"
           else
             printf 'ACCOUNT_PRIVATE_KEY_1=%s\n' "$KEY" > .env
+            cp gltest.wallet.config.yaml gltest.config.yaml
             echo "network=studionet_wallet" >> "$GITHUB_OUTPUT"
           fi
 
@@ -135,6 +137,7 @@ jobs:
             echo "::warning::ACCOUNT_PRIVATE_KEY_1 is not set, skipping the wallet deploy"
           else
             printf 'ACCOUNT_PRIVATE_KEY_1=%s\n' "$KEY" > .env
+            cp gltest.wallet.config.yaml gltest.config.yaml
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
 

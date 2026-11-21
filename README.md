@@ -156,12 +156,14 @@ deterministik), jadi hasilnya reproducible dan tidak memakai token LLM.
 `genvm_datetime` dipin per transaksi, jadi jendela taruhan dan waktu resolusi
 tidak perlu ditunggu.
 
-Dua jalur jaringan tersedia di `gltest.config.yaml`:
+Dua file konfigurasi:
 
-- `studionet` — akun dibuat otomatis, tanpa kunci; dipakai kalau secret belum ada.
-- `studionet_wallet` — memakai wallet sungguhan dari secret
-  `ACCOUNT_PRIVATE_KEY_1`. Job `integration` otomatis memilih jalur ini kalau
-  secret tersedia, jadi semua transaksi berasal dari wallet kamu.
+- `gltest.config.yaml` — dipakai apa adanya; akun dibuat otomatis oleh SDK, tanpa
+  kunci, sehingga siapa pun yang clone repo bisa menjalankan suite ini.
+- `gltest.wallet.config.yaml` — template `studionet_wallet` (chain id 61999) yang
+  membaca `${ACCOUNT_PRIVATE_KEY_1}` dari `.env`. CI menyalin file ini ke
+  `gltest.config.yaml` hanya kalau secret tersedia, jadi semua transaksi berasal
+  dari wallet kamu.
 
 ### Deploy sungguhan + bukti untuk portal
 

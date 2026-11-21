@@ -1,0 +1,23 @@
+# Template untuk menjalankan test/deploy dengan wallet sungguhan.
+#
+# CI menyalin file ini ke gltest.config.yaml hanya ketika secret
+# ACCOUNT_PRIVATE_KEY_1 tersedia, dan menulis .env dari secret tersebut.
+# Jangan menaruh kunci di file ini: nilainya dibaca dari .env.
+networks:
+  default: studionet_wallet
+
+  studionet:
+    url: "https://studio.genlayer.com/api"
+    leader_only: false
+
+  studionet_wallet:
+    id: 61999
+    url: "https://studio.genlayer.com/api"
+    chain_type: "studionet"
+    accounts:
+      - "${ACCOUNT_PRIVATE_KEY_1}"
+    from: "${ACCOUNT_PRIVATE_KEY_1}"
+
+paths:
+  contracts: "contracts"
+  artifacts: "artifacts"
