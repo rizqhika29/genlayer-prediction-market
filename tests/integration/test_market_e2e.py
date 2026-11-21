@@ -23,7 +23,7 @@ from gltest.assertions import tx_execution_failed, tx_execution_succeeded
 CONTRACT = "PredictionMarket"
 GEN = 10 ** 18
 
-URL = "https://example.com/result"
+URL = "https://example.com/"
 PAGE = "<html><body><h1>Example Domain</h1></body></html>"
 
 T0 = "2030-01-01T00:00:00Z"
