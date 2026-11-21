@@ -170,12 +170,14 @@ def _as_int(value, default: int = 0) -> int:
 
 
 def _source_list(sources: str) -> list[str]:
+    """Every non-empty line. Never truncate: too many sources must be rejected
+    by create_market instead of being silently dropped."""
     urls = []
     for line in sources.split("\n"):
         url = line.strip()
         if url:
             urls.append(url)
-    return urls[:MAX_SOURCES]
+    return urls
 
 
 def _norm_url(url: str) -> str:
