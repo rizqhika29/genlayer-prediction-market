@@ -7,6 +7,10 @@ LLM tokens.
 
 ``genvm_datetime`` is pinned per transaction, which makes the betting window and
 the resolution time reproducible without sleeping.
+
+Note on the client API: a contract method accepts only ``args``; the caller is
+selected with ``contract.connect(account)`` and the transaction context is passed
+to ``.transact()`` / ``.call()``.
 """
 
 import json
@@ -74,8 +78,7 @@ def create_market(ctx, contract):
             URL,
             RESOLVE_AFTER,
             REFUND_AFTER,
-        ],
-        transaction_context=ctx,
+        ]
     ).transact(transaction_context=ctx)
     assert tx_execution_succeeded(tx)
 
@@ -86,7 +89,7 @@ def market_with_stakes(ctx, contract, bettor):
     tx = contract.stake_yes(args=[0]).transact(value=3 * GEN, transaction_context=ctx)
     assert tx_execution_succeeded(tx)
 
-    tx = contract.stake_no(args=[0], account=bettor).transact(
+    tx = contract.connect(bettor).stake_no(args=[0]).transact(
         value=GEN, transaction_context=ctx
     )
     assert tx_execution_succeeded(tx)
@@ -158,7 +161,7 @@ def test_void_before_the_refund_window_is_rejected(ctx, default_account, account
     market_with_stakes(ctx, contract, accounts[1])
 
     early = at_time(ctx, BEFORE_RESOLUTION)
-    tx = contract.void_market(args=[0], account=accounts[2]).transact(
+    tx = contract.connect(accounts[2]).void_market(args=[0]).transact(
         transaction_context=early
     )
     assert tx_execution_failed(tx)
@@ -171,7 +174,7 @@ def test_anyone_can_void_after_the_refund_window(ctx, default_account, accounts)
     market_with_stakes(ctx, contract, accounts[1])
 
     late = at_time(ctx, AFTER_REFUND)
-    tx = contract.void_market(args=[0], account=accounts[2]).transact(
+    tx = contract.connect(accounts[2]).void_market(args=[0]).transact(
         transaction_context=late
     )
     assert tx_execution_succeeded(tx)
