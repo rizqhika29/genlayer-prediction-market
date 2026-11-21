@@ -137,6 +137,32 @@ Satu test `withdraw` di-skip: direct mode tidak punya lapisan chain, jadi saldo
 kontrak dan pesan eksternal (`emit_transfer`) tidak disimulasikan. Lompatan
 transfer itu hanya bisa diuji di Studio atau testnet Bradbury.
 
+## Test integrasi (studionet)
+
+`tests/integration/` menjalankan alur nyata di jaringan GenLayer Studio:
+
+```bash
+gltest tests/integration -v --network studionet
+```
+
+- deploy, `create_market`, taruhan dua sisi, `resolve`, `claim`, dan saldo
+  pemenang;
+- adversarial: taruhan setelah `resolve_after` ditolak, `resolve` sebelum
+  waktunya ditolak, `void_market` sebelum `refund_after` ditolak, siapa pun
+  boleh void setelahnya, dan double claim ditolak.
+
+Validator di-mock (`batch_create_mock_validators` dengan jawaban web + LLM
+deterministik), jadi hasilnya reproducible dan tidak memakai token LLM.
+`genvm_datetime` dipin per transaksi, jadi jendela taruhan dan waktu resolusi
+tidak perlu ditunggu.
+
+Akun studionet dibuat otomatis oleh SDK, jadi **tidak perlu private key**. Job
+`integration` di CI menjalankan suite ini pada setiap push. Untuk testnet
+(Bradbury) baru perlu kunci: simpan sebagai GitHub Actions secret
+`ACCOUNT_PRIVATE_KEY_1`, rujuk `${ACCOUNT_PRIVATE_KEY_1}` di
+`gltest.config.yaml`, dan buat `.env` dari secret itu di langkah CI. Jangan
+pernah menaruh kunci di repo atau di chat.
+
 ## Deploy
 
 **Studio** — buka [studio.genlayer.com](https://studio.genlayer.com), tempel isi
