@@ -161,9 +161,11 @@ Dua file konfigurasi:
 - `gltest.config.yaml` — dipakai apa adanya; akun dibuat otomatis oleh SDK, tanpa
   kunci, sehingga siapa pun yang clone repo bisa menjalankan suite ini.
 - `gltest.wallet.config.yaml` — template `studionet_wallet` (chain id 61999) yang
-  membaca `${ACCOUNT_PRIVATE_KEY_1}` dari `.env`. CI menyalin file ini ke
-  `gltest.config.yaml` hanya kalau secret tersedia, jadi semua transaksi berasal
-  dari wallet kamu.
+  membaca tiga akun dari `.env`. CI menyalin file ini ke `gltest.config.yaml` dan
+  membuat `.env` lewat `scripts/write_env.py` hanya kalau secret tersedia:
+  akun utama adalah wallet kamu (`ACCOUNT_PRIVATE_KEY_1`), sedangkan penebak
+  kedua dan outsider adalah kunci turunan deterministik dari kunci itu, supaya
+  satu secret cukup untuk test tiga pihak.
 
 ### Deploy sungguhan + bukti untuk portal
 

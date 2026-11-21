@@ -16,6 +16,8 @@ networks:
     chain_type: "studionet"
     accounts:
       - "${ACCOUNT_PRIVATE_KEY_1}"
+      - "${ACCOUNT_PRIVATE_KEY_2}"
+      - "${ACCOUNT_PRIVATE_KEY_3}"
     from: "${ACCOUNT_PRIVATE_KEY_1}"
 
 paths:
