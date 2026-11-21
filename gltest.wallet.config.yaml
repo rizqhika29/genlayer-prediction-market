@@ -1,8 +1,8 @@
-# Template untuk menjalankan test/deploy dengan wallet sungguhan.
+# Template for running the tests and the deployment with a real wallet.
 #
-# CI menyalin file ini ke gltest.config.yaml hanya ketika secret
-# ACCOUNT_PRIVATE_KEY_1 tersedia, dan menulis .env dari secret tersebut.
-# Jangan menaruh kunci di file ini: nilainya dibaca dari .env.
+# CI copies this file over gltest.config.yaml only when the
+# ACCOUNT_PRIVATE_KEY_1 secret exists, and builds .env with scripts/write_env.py.
+# Never put a key in this file: the values are read from .env.
 networks:
   default: studionet_wallet
 

@@ -23,7 +23,7 @@ from gltest.assertions import tx_execution_failed, tx_execution_succeeded
 CONTRACT = "PredictionMarket"
 GEN = 10 ** 18
 
-URL = "https://example.com/"
+URL = "https://example.com/result"
 PAGE = "<html><body><h1>Example Domain</h1></body></html>"
 
 T0 = "2030-01-01T00:00:00Z"
@@ -40,7 +40,7 @@ YES_ANSWER = json.dumps(
         "outcome": "yes",
         "confidence": 95,
         "source_url": URL,
-        "reason": "Halaman memuat teks Example Domain.",
+        "reason": "The page shows the text Example Domain.",
     }
 )
 
@@ -73,8 +73,8 @@ def at_time(ctx, iso):
 def create_market(ctx, contract):
     tx = contract.create_market(
         args=[
-            "Apakah halaman example.com memuat teks Example Domain?",
-            "Jawab yes bila teks Example Domain muncul, no bila tidak.",
+            "Did the page example.com contain the text Example Domain?",
+            "Answer yes if the text Example Domain appears, otherwise no.",
             URL,
             RESOLVE_AFTER,
             REFUND_AFTER,

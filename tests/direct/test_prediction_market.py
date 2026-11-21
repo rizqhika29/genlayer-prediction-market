@@ -16,10 +16,10 @@ from tests.direct.conftest import to_hex
 CONTRACT = "contracts/prediction_market.py"
 GEN = 10 ** 18
 
-MARKET_URL = "https://example.com/hasil"
+MARKET_URL = "https://example.com/result"
 MARKET_PAGE = (
-    "<html><body><h1>Hasil final</h1>"
-    "<p>Indonesia lolos ke putaran final.</p></body></html>"
+    "<html><body><h1>Final result</h1>"
+    "<p>Indonesia reached the final round.</p></body></html>"
 )
 
 RESOLVE_AFTER = 2_000_000_000              # 2033-05-18, after the test clock
@@ -28,19 +28,19 @@ AFTER_RESOLVE = "2033-05-19T00:00:00Z"
 AFTER_REFUND = "2036-08-01T00:00:00Z"
 
 YES_ANSWER = (
-    '{"outcome": "yes", "confidence": 92, "source_url": "https://example.com/hasil", '
-    '"reason": "Halaman menyatakan Indonesia lolos ke putaran final."}'
+    '{"outcome": "yes", "confidence": 92, "source_url": "https://example.com/result", '
+    '"reason": "The page says Indonesia reached the final round."}'
 )
 NO_ANSWER = (
-    '{"outcome": "no", "confidence": 88, "source_url": "https://example.com/hasil", '
-    '"reason": "Halaman menyatakan Indonesia tidak lolos."}'
+    '{"outcome": "no", "confidence": 88, "source_url": "https://example.com/result", '
+    '"reason": "The page says Indonesia did not reach the final round."}'
 )
 
 
 def create_market(contract, resolve_after=RESOLVE_AFTER, refund_after=REFUND_AFTER):
     return contract.create_market(
-        "Apakah Indonesia lolos ke putaran final?",
-        "Jawab yes bila Indonesia bermain di putaran final, no bila tidak.",
+        "Did Indonesia reach the final round?",
+        "Answer yes if Indonesia played in the final round, otherwise no.",
         MARKET_URL,
         resolve_after,
         refund_after,
@@ -48,7 +48,7 @@ def create_market(contract, resolve_after=RESOLVE_AFTER, refund_after=REFUND_AFT
 
 
 def mock_resolution(direct_vm, llm_answer, page=MARKET_PAGE):
-    direct_vm.mock_web(r"example\.com/hasil", {"status": 200, "body": page})
+    direct_vm.mock_web(r"example\.com/result", {"status": 200, "body": page})
     direct_vm.mock_llm(r"impartial resolver", llm_answer)
 
 
@@ -73,7 +73,7 @@ def test_create_market(direct_vm, direct_deploy, direct_alice):
 
     assert market_id == 0
     assert contract.get_market_count() == 1
-    assert contract.get_question(0) == "Apakah Indonesia lolos ke putaran final?"
+    assert contract.get_question(0) == "Did Indonesia reach the final round?"
     assert contract.get_sources(0) == MARKET_URL
     assert contract.get_outcome(0) == ""
     assert contract.get_total_pool(0) == 0
