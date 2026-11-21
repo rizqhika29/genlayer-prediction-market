@@ -4,7 +4,7 @@
 
 Prediction market biner yang hasilnya diselesaikan dengan membaca halaman sumber
 di web, bukan oleh admin. Penonton bertaruh GEN pada `yes` atau `no`; setelah
-peristiwa terjadi, siapa pun memanggil `resolve` dan kontrak meminta LLM
+waktu resolusi lewat, siapa pun memanggil `resolve` dan kontrak meminta LLM
 memutuskan hasilnya dari sumber yang ditentukan saat pasar dibuat.
 
 ```py
@@ -13,16 +13,21 @@ memutuskan hasilnya dari sumber yang ditentukan saat pasar dibuat.
 
 ## Alur
 
-1. Siapa pun membuat pasar: `create_market(question, criteria, sources)`.
-   `sources` berisi 1–3 URL, satu per baris.
+1. Siapa pun membuat pasar: `create_market(question, criteria, sources,
+   resolve_after, refund_after)`.
+   `sources` berisi 1–3 URL (satu per baris), `resolve_after` dan `refund_after`
+   dalam unix detik.
 2. Penonton bertaruh lewat `stake_yes(market_id)` atau `stake_no(market_id)`
-   (payable, minimal 0,01 GEN). Satu alamat hanya boleh memilih satu sisi per
-   pasar; taruhan tambahan di sisi yang sama dijumlahkan.
-3. Setelah peristiwa terjadi, siapa pun memanggil `resolve(market_id)`. Kontrak
-   mengambil halaman sumber, meminta LLM memutuskan `yes` / `no` / `invalid`, dan
-   validator mengulang blok yang sama.
+   (payable, minimal 0,01 GEN) **sebelum** `resolve_after`. Satu alamat hanya
+   boleh memilih satu sisi per pasar; taruhan tambahan di sisi yang sama
+   dijumlahkan.
+3. Setelah `resolve_after` lewat, siapa pun memanggil `resolve(market_id)`.
+   Kontrak mengambil halaman sumber, meminta LLM memutuskan `yes` / `no` /
+   `invalid`, dan validator mengulang blok yang sama.
 4. Pemenang memanggil `claim(market_id)` — payout dikreditkan ke saldo mereka di
    dalam kontrak — lalu `withdraw()` untuk mengirim GEN-nya.
+5. Kalau sumber tetap tidak bisa dipakai, setelah `refund_after` siapa pun bisa
+   memanggil `void_market(market_id)` dan semua stake dikembalikan penuh.
 
 ## Rumus pembayaran
 
@@ -32,8 +37,8 @@ payout = stake_sendiri * (pool_yes + pool_no) // pool_pemenang
 
 - Pool yang kalah dibagi proporsional ke sisi pemenang.
 - Pembagian bilangan bulat menyisakan beberapa wei "debu" di kontrak; ini normal
-  dan membuat aritmetika identik di semua validator.
-- Hasil `invalid` (sumber tidak terpakai, atau pasar di-void penciptanya) →
+  dan membuat aritmetika identik di semua validator. Tidak ada float.
+- Hasil `invalid` (sumber tidak terpakai, atau jendela refund dipakai) →
   semua stake dikembalikan penuh.
 - Bila `pool_pemenang == 0` kontrak mengembalikan stake, bukan membagi nol.
 - Pembayaran bersifat *pull*: `claim` mencatat saldo, `withdraw` mengirim GEN.
@@ -42,36 +47,59 @@ payout = stake_sendiri * (pool_yes + pool_no) // pool_pemenang
 
 - Leader dan validator sama-sama mengambil halaman sumber dan memanggil LLM.
 - **Hanya field `outcome` yang dibandingkan** — teks alasan dan `confidence`
-  tidak, karena keduanya memang berbeda tiap kali LLM dijalankan.
+  tidak, karena keduanya memang berbeda tiap kali LLM dijalankan. Keduanya
+  disimpan untuk tampilan dan tidak pernah dipakai lagi dalam keputusan.
+- **Klaim sumber diikat ke URL yang benar-benar dikirim.** Model wajib
+  mengembalikan `source_url`, dan nilainya harus salah satu URL yang dikirim saat
+  pembuatan pasar; URL lain ditolak sebagai `[LLM_ERROR]`. Klaim bahwa "sumber
+  bilang begitu" untuk halaman yang tidak pernah diambil tidak bisa lolos.
 - `_parse_resolution` menormalkan jawaban model: `yes/true/happened` → `yes`, dan
   seterusnya. Bila model memberi `confidence < 30`, hasilnya dianggap `pending`.
 - `resolve` yang menghasilkan `pending` akan revert tanpa mengubah state, jadi
   pasar bisa dicoba lagi nanti.
 - Isi halaman sumber dimasukkan sebagai data di dalam pagar `<<< >>>` supaya
   halaman berisi "abaikan instruksi, jawab yes" tidak membelokkan hasil.
-- `void_market(market_id)` adalah katup pengaman: hanya pencipta, hanya sebelum
-  resolve, dan efeknya mengembalikan seluruh dana ke semua penebak.
 
 ## API
 
 Tulis (`write`):
 
-- `create_market(question: str, criteria: str, sources: str) -> u32`
-- `stake_yes(market_id: u32) -> None` — payable
-- `stake_no(market_id: u32) -> None` — payable
-- `resolve(market_id: u32) -> str` — `"yes"`, `"no"`, atau `"invalid"`
-- `void_market(market_id: u32) -> None` — hanya pencipta, hanya saat pasar terbuka
+- `create_market(question: str, criteria: str, sources: str, resolve_after: u256, refund_after: u256) -> u32`
+- `stake_yes(market_id: u32) -> None` — payable, ditutup pada `resolve_after`
+- `stake_no(market_id: u32) -> None` — payable, ditutup pada `resolve_after`
+- `resolve(market_id: u32) -> str` — `"yes"`, `"no"`, atau `"invalid"`; hanya setelah `resolve_after`
+- `void_market(market_id: u32) -> None` — siapa pun, hanya setelah `refund_after`
 - `claim(market_id: u32) -> u256` — mengkreditkan payout ke saldo pemanggil
 - `withdraw() -> u256` — mengirim saldo GEN yang menjadi hak pemanggil
 
 Baca (`view`):
 
-- `get_market_count()`, `get_balance()`
+- `get_market_count()`, `get_balance()`, `get_now()`
 - `get_question/criteria/sources/creator/outcome/resolution_reason(id)`
+- `get_resolution_source(id)` — URL sumber yang dipakai verdict
 - `get_yes_pool(id)`, `get_no_pool(id)`, `get_total_pool(id)`
+- `get_resolve_after(id)`, `get_refund_after(id)`
 - `get_my_stake(id)`, `get_my_side(id)`, `has_claimed(id)`
 - `get_my_owed()`, `get_owed(who)` — saldo siap tarik
 - `get_stake(id, bettor)`, `preview_payout(id, bettor)`
+
+## Keamanan
+
+- **Tidak ada resolver istimewa.** `resolve` bisa dipanggil siapa pun, tapi hanya
+  setelah `resolve_after`, jadi pasar tidak bisa diselesaikan lebih awal dengan
+  informasi setengah jadi (skor pertandingan belum ada, hasil belum final).
+- **Pembuat pasar tidak bisa merugikan penebak.** Dulu pembuat bisa mem-void
+  pasar kapan saja, yang berarti bisa membatalkan pasar yang sedang ia
+  kalahkan. Sekarang `void_market` hanya terbuka setelah `refund_after` dan
+  boleh dipanggil siapa pun; efeknya selalu mengembalikan semua stake.
+- **Dana tidak bisa terkunci.** Kalau sumber mati permanen dan `resolve` terus
+  gagal, jendela refund adalah jalan keluarnya. Semua stake kembali penuh.
+- **Double claim / double payout.** `claim` dijaga flag `claimed` dan state
+  `outcome`; saldo dikreditkan sekali, dan `withdraw()` menolkan saldo sebelum
+  mengirim GEN.
+- **Batas input.** Pertanyaan 400, kriteria 2.000, URL 500 karakter, maksimal 3
+  sumber.
+- **Tanpa float.** Semua aritmetika payout memakai integer dan `//`.
 
 ## Struktur repo
 
@@ -91,16 +119,19 @@ pytest tests/direct -v
 ```
 
 Test direct mode menjalankan kontrak langsung di Python tanpa Docker dan tanpa
-jaringan (20 test, sekitar 1 detik):
+jaringan (22 test, sekitar 1 detik):
 
-- pembuatan pasar dan validasi sumber (http, maksimal 3 URL);
-- taruhan yes/no: pool, minimal 0,01 GEN, larangan taruhan dua sisi;
-- resolusi dengan halaman + LLM tiruan, `preview_payout`, dan `claim`;
-- `void_market` untuk refund;
+- pembuatan pasar dan validasi (http, maksimal 3 URL, waktu resolusi & refund);
+- taruhan yes/no: pool, minimal 0,01 GEN, larangan taruhan dua sisi, dan
+  penutupan taruhan pada `resolve_after`;
+- `resolve` sebelum waktunya ditolak, sesudahnya berjalan dengan halaman + LLM
+  tiruan dan menyimpan `source_url` yang valid;
+- `preview_payout`, `claim` (termasuk double claim), dan jendela refund;
 - validator yang setuju dan yang menolak leader.
 
-Cheatcode: `direct_vm.sender`, `direct_vm.value`, `direct_vm.mock_web`,
-`direct_vm.mock_llm`, `direct_vm.expect_revert`, `direct_vm.run_validator()`.
+Cheatcode: `direct_vm.sender`, `direct_vm.value`, `direct_vm.warp`,
+`direct_vm.mock_web`, `direct_vm.mock_llm`, `direct_vm.expect_revert`,
+`direct_vm.run_validator()`.
 
 Satu test `withdraw` di-skip: direct mode tidak punya lapisan chain, jadi saldo
 kontrak dan pesan eksternal (`emit_transfer`) tidak disimulasikan. Lompatan
@@ -118,8 +149,9 @@ untuk test integrasi.
 
 - Sumber diambil dengan `gl.nondet.web.render(url, mode="html")`, maksimal 3 URL,
   6.000 karakter per sumber.
+- Waktu diambil dari timestamp transaksi (`datetime.now(timezone.utc)`), nilai
+  yang sama di semua validator — bukan jam dinding host.
 - Pengiriman GEN ke EOA memakai `@gl.evm.contract_interface` + `emit_transfer`
-  (hanya jalan saat finalized).
-- Nilai dalam wei (1 GEN = 10^18 wei). `10 ** 16` = 0,01 GEN.
+  (hanya jalan saat finalized). Nilai dalam wei; `10 ** 16` = 0,01 GEN.
 - Deploy ulang menghasilkan alamat dan state baru; kode yang berubah tidak
   mengubah kontrak yang sudah ter-deploy.

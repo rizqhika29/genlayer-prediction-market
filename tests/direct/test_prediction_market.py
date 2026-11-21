@@ -1,8 +1,8 @@
 """Direct mode tests for contracts/prediction_market.py.
 
 Every web page and LLM answer is mocked, so the tests exercise the
-deterministic contract logic plus the leader/validator comparison without
-touching the network.
+deterministic contract logic, the lifecycle windows and the leader/validator
+comparison without touching the network.
 
 Payouts are pulled: ``claim`` credits a balance inside the contract and
 ``withdraw`` sends the GEN out. Direct mode has no chain layer, so that last
@@ -22,21 +22,28 @@ MARKET_PAGE = (
     "<p>Indonesia lolos ke putaran final.</p></body></html>"
 )
 
+RESOLVE_AFTER = 2_000_000_000              # 2033-05-18, after the test clock
+REFUND_AFTER = 2_100_000_000               # later window for the refund escape
+AFTER_RESOLVE = "2033-05-19T00:00:00Z"
+AFTER_REFUND = "2036-08-01T00:00:00Z"
+
 YES_ANSWER = (
-    '{"outcome": "yes", "confidence": 92, '
+    '{"outcome": "yes", "confidence": 92, "source_url": "https://example.com/hasil", '
     '"reason": "Halaman menyatakan Indonesia lolos ke putaran final."}'
 )
 NO_ANSWER = (
-    '{"outcome": "no", "confidence": 88, '
+    '{"outcome": "no", "confidence": 88, "source_url": "https://example.com/hasil", '
     '"reason": "Halaman menyatakan Indonesia tidak lolos."}'
 )
 
 
-def create_market(contract):
+def create_market(contract, resolve_after=RESOLVE_AFTER, refund_after=REFUND_AFTER):
     return contract.create_market(
         "Apakah Indonesia lolos ke putaran final?",
         "Jawab yes bila Indonesia bermain di putaran final, no bila tidak.",
         MARKET_URL,
+        resolve_after,
+        refund_after,
     )
 
 
@@ -70,6 +77,8 @@ def test_create_market(direct_vm, direct_deploy, direct_alice):
     assert contract.get_sources(0) == MARKET_URL
     assert contract.get_outcome(0) == ""
     assert contract.get_total_pool(0) == 0
+    assert contract.get_resolve_after(0) == RESOLVE_AFTER
+    assert contract.get_refund_after(0) == REFUND_AFTER
     assert to_hex(contract.get_creator(0)) == to_hex(direct_alice)
 
 
@@ -78,7 +87,10 @@ def test_create_market_requires_http_source(direct_vm, direct_deploy, direct_ali
     contract = direct_deploy(CONTRACT)
 
     with direct_vm.expect_revert("source URL must start with http"):
-        contract.create_market("Pertanyaan?", "Kriteria resolusi.", "ftp://example.com/x")
+        contract.create_market(
+            "Pertanyaan?", "Kriteria resolusi.", "ftp://example.com/x",
+            RESOLVE_AFTER, REFUND_AFTER,
+        )
 
 
 def test_create_market_rejects_more_than_three_sources(
@@ -90,7 +102,29 @@ def test_create_market_rejects_more_than_three_sources(
     sources = "\n".join("https://example.com/%d" % i for i in range(4))
 
     with direct_vm.expect_revert("at most 3 source URLs"):
-        contract.create_market("Pertanyaan?", "Kriteria resolusi.", sources)
+        contract.create_market(
+            "Pertanyaan?", "Kriteria resolusi.", sources, RESOLVE_AFTER, REFUND_AFTER
+        )
+
+
+def test_create_market_requires_a_future_resolution_time(
+    direct_vm, direct_deploy, direct_alice
+):
+    direct_vm.sender = direct_alice
+    contract = direct_deploy(CONTRACT)
+
+    with direct_vm.expect_revert("resolution time must be in the future"):
+        create_market(contract, resolve_after=1_000_000_000)
+
+
+def test_create_market_requires_refund_after_resolution(
+    direct_vm, direct_deploy, direct_alice
+):
+    direct_vm.sender = direct_alice
+    contract = direct_deploy(CONTRACT)
+
+    with direct_vm.expect_revert("refund time must be after the resolution time"):
+        create_market(contract, refund_after=RESOLVE_AFTER - 1)
 
 
 def test_unknown_market_views_are_empty(direct_vm, direct_deploy, direct_alice):
@@ -164,25 +198,42 @@ def test_stake_below_minimum_reverts(direct_vm, direct_deploy, direct_alice):
     direct_vm.value = 0
 
 
-def test_cannot_stake_after_resolution(direct_vm, direct_deploy, direct_alice):
+def test_betting_closes_at_the_resolution_time(
+    direct_vm, direct_deploy, direct_alice
+):
+    direct_vm.sender = direct_alice
+    contract = direct_deploy(CONTRACT)
+    create_market(contract)
+    stake(direct_vm, contract, "yes", GEN)
+
+    direct_vm.warp(AFTER_RESOLVE)
+
+    direct_vm.value = GEN
+    with direct_vm.expect_revert("betting is closed"):
+        contract.stake_no(0)
+    direct_vm.value = 0
+
+
+def test_resolve_before_the_resolution_time_reverts(
+    direct_vm, direct_deploy, direct_alice
+):
     direct_vm.sender = direct_alice
     contract = direct_deploy(CONTRACT)
     create_market(contract)
     stake(direct_vm, contract, "yes", GEN)
 
     mock_resolution(direct_vm, YES_ANSWER)
-    contract.resolve(0)
 
-    direct_vm.value = GEN
-    with direct_vm.expect_revert("market is already resolved"):
-        contract.stake_no(0)
-    direct_vm.value = 0
+    with direct_vm.expect_revert("cannot be resolved before its resolution time"):
+        contract.resolve(0)
 
 
 def test_resolve_without_stakes_reverts(direct_vm, direct_deploy, direct_alice):
     direct_vm.sender = direct_alice
     contract = direct_deploy(CONTRACT)
     create_market(contract)
+
+    direct_vm.warp(AFTER_RESOLVE)
 
     with direct_vm.expect_revert("market has no stakes yet"):
         contract.resolve(0)
@@ -205,10 +256,13 @@ def test_resolve_yes_and_payout_preview(
     stake(direct_vm, contract, "no", GEN)
 
     mock_resolution(direct_vm, YES_ANSWER)
+    direct_vm.warp(AFTER_RESOLVE)
 
     assert contract.resolve(0) == "yes"
     assert contract.get_outcome(0) == "yes"
     assert contract.get_resolution_reason(0) != ""
+    # The stored source must be one of the URLs submitted at creation.
+    assert contract.get_resolution_source(0) == MARKET_URL
 
     # Alice risked 3 of the 4 GEN pool, so she takes the whole pool.
     assert contract.preview_payout(0, to_hex(direct_alice)) == 4 * GEN
@@ -230,6 +284,7 @@ def test_claim_credits_the_winner(
     stake(direct_vm, contract, "no", GEN)
 
     mock_resolution(direct_vm, YES_ANSWER)
+    direct_vm.warp(AFTER_RESOLVE)
     contract.resolve(0)
 
     direct_vm.sender = direct_alice
@@ -259,41 +314,40 @@ def test_claim_before_resolution_reverts(
         contract.claim(0)
 
 
-def test_resolve_is_rejected_when_validator_disagrees(
-    direct_vm, direct_deploy, direct_alice
-):
+def test_resolve_twice_reverts(direct_vm, direct_deploy, direct_alice):
     direct_vm.sender = direct_alice
     contract = direct_deploy(CONTRACT)
     create_market(contract)
     stake(direct_vm, contract, "yes", GEN)
 
     mock_resolution(direct_vm, YES_ANSWER)
-    assert contract.resolve(0) == "yes"
-
-    # Same page, different answer: the validator recomputes "no" and must
-    # reject the leader's "yes".
-    direct_vm.clear_mocks()
-    mock_resolution(direct_vm, NO_ANSWER)
-
-    assert direct_vm.run_validator() is False
-
-
-def test_validator_agrees_with_identical_mocks(
-    direct_vm, direct_deploy, direct_alice
-):
-    direct_vm.sender = direct_alice
-    contract = direct_deploy(CONTRACT)
-    create_market(contract)
-    stake(direct_vm, contract, "yes", GEN)
-
-    mock_resolution(direct_vm, YES_ANSWER)
+    direct_vm.warp(AFTER_RESOLVE)
     contract.resolve(0)
 
-    assert direct_vm.run_validator() is True
+    with direct_vm.expect_revert("market is already resolved"):
+        contract.resolve(0)
 
 
-def test_void_market_refunds_every_stake(
-    direct_vm, direct_deploy, direct_alice, direct_bob
+# ---------------------------------------------------------------------------
+# Timeout escape: the refund window
+# ---------------------------------------------------------------------------
+
+def test_void_before_the_refund_window_reverts(
+    direct_vm, direct_deploy, direct_alice
+):
+    direct_vm.sender = direct_alice
+    contract = direct_deploy(CONTRACT)
+    create_market(contract)
+    stake(direct_vm, contract, "yes", GEN)
+
+    direct_vm.warp(AFTER_RESOLVE)
+
+    with direct_vm.expect_revert("the refund window has not opened yet"):
+        contract.void_market(0)
+
+
+def test_anyone_can_void_after_the_refund_window(
+    direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
 ):
     direct_vm.sender = direct_alice
     contract = direct_deploy(CONTRACT)
@@ -304,7 +358,10 @@ def test_void_market_refunds_every_stake(
     direct_vm.sender = direct_bob
     stake(direct_vm, contract, "no", GEN)
 
-    direct_vm.sender = direct_alice
+    # The creator cannot pull this lever early, and the escape is not reserved
+    # to the creator either: a stranger can settle the deadlock.
+    direct_vm.warp(AFTER_REFUND)
+    direct_vm.sender = direct_charlie
     contract.void_market(0)
 
     assert contract.get_outcome(0) == "invalid"
@@ -312,29 +369,48 @@ def test_void_market_refunds_every_stake(
     assert contract.preview_payout(0, to_hex(direct_bob)) == GEN
 
 
-def test_only_creator_can_void(direct_vm, direct_deploy, direct_alice, direct_bob):
-    direct_vm.sender = direct_alice
-    contract = direct_deploy(CONTRACT)
-    create_market(contract)
+# ---------------------------------------------------------------------------
+# Consensus
+# ---------------------------------------------------------------------------
 
-    direct_vm.sender = direct_bob
-
-    with direct_vm.expect_revert("only the creator can void"):
-        contract.void_market(0)
-
-
-def test_resolve_twice_reverts(direct_vm, direct_deploy, direct_alice):
+def test_validator_agrees_with_identical_mocks(
+    direct_vm, direct_deploy, direct_alice
+):
     direct_vm.sender = direct_alice
     contract = direct_deploy(CONTRACT)
     create_market(contract)
     stake(direct_vm, contract, "yes", GEN)
 
     mock_resolution(direct_vm, YES_ANSWER)
+    direct_vm.warp(AFTER_RESOLVE)
     contract.resolve(0)
 
-    with direct_vm.expect_revert("market is already resolved"):
-        contract.resolve(0)
+    assert direct_vm.run_validator() is True
 
+
+def test_resolve_is_rejected_when_validator_disagrees(
+    direct_vm, direct_deploy, direct_alice
+):
+    direct_vm.sender = direct_alice
+    contract = direct_deploy(CONTRACT)
+    create_market(contract)
+    stake(direct_vm, contract, "yes", GEN)
+
+    mock_resolution(direct_vm, YES_ANSWER)
+    direct_vm.warp(AFTER_RESOLVE)
+    assert contract.resolve(0) == "yes"
+
+    # Same page, different answer: the validator recomputes "no" and must
+    # reject the leader's "yes".
+    direct_vm.clear_mocks()
+    mock_resolution(direct_vm, NO_ANSWER)
+
+    assert direct_vm.run_validator() is False
+
+
+# ---------------------------------------------------------------------------
+# Withdrawal
+# ---------------------------------------------------------------------------
 
 def test_withdraw_without_a_balance_reverts(
     direct_vm, direct_deploy, direct_alice
@@ -357,6 +433,7 @@ def test_withdraw_sends_gen(direct_vm, direct_deploy, direct_alice):  # pragma: 
     stake(direct_vm, contract, "yes", GEN)
 
     mock_resolution(direct_vm, YES_ANSWER)
+    direct_vm.warp(AFTER_RESOLVE)
     contract.resolve(0)
     contract.claim(0)
 
