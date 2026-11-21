@@ -88,5 +88,70 @@ jobs:
       - name: Install GenVM tooling
         run: pip install -r requirements.txt
 
+      - name: Use the wallet when the secret is available
+        id: wallet
+        env:
+          KEY: ${{ secrets.ACCOUNT_PRIVATE_KEY_1 }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "network=studionet" >> "$GITHUB_OUTPUT"
+            echo "::warning::ACCOUNT_PRIVATE_KEY_1 is not set, using the auto-generated studionet account"
+          else
+            printf 'ACCOUNT_PRIVATE_KEY_1=%s\n' "$KEY" > .env
+            echo "network=studionet_wallet" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run integration tests against studionet
-        run: gltest tests/integration -v --network studionet
+        run: gltest tests/integration -v --network ${{ steps.wallet.outputs.network }}
+
+
+  deploy:
+    name: Deploy with the studionet wallet
+    # Real deployment from the wallet in ACCOUNT_PRIVATE_KEY_1. The record it
+    # writes under deployments/ is committed back to the repo for the portal
+    # submission. Without the secret the job reports a warning and does nothing.
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install GenVM tooling
+        run: pip install -r requirements.txt
+
+      - name: Prepare the wallet
+        id: wallet
+        env:
+          KEY: ${{ secrets.ACCOUNT_PRIVATE_KEY_1 }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ACCOUNT_PRIVATE_KEY_1 is not set, skipping the wallet deploy"
+          else
+            printf 'ACCOUNT_PRIVATE_KEY_1=%s\n' "$KEY" > .env
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy and record the deployment
+        if: steps.wallet.outputs.present == 'true'
+        run: gltest tests/deploy -v --network studionet_wallet
+
+      - name: Commit the deployment record
+        if: steps.wallet.outputs.present == 'true'
+        run: |
+          rm -f .env
+          git config user.name "genlayer-ci"
+          git config user.email "genlayer-ci@users.noreply.github.com"
+          git add deployments
+          if git diff --staged --quiet; then
+            echo "No new deployment to record."
+          else
+            git commit -m "Record studionet deployment"
+            git push
+          fi

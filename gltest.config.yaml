@@ -1,9 +1,20 @@
 networks:
   default: studionet
 
+  # Tanpa kunci: akun dibuat otomatis oleh SDK (untuk siapa pun yang clone repo).
   studionet:
     url: "https://studio.genlayer.com/api"
     leader_only: false
+
+  # Wallet sungguhan untuk deploy dan test yang hasilnya disubmit ke portal.
+  # Kuncinya datang dari GitHub Actions secret ACCOUNT_PRIVATE_KEY_1 via .env.
+  studionet_wallet:
+    id: 61999
+    url: "https://studio.genlayer.com/api"
+    chain_type: "studionet"
+    accounts:
+      - "${ACCOUNT_PRIVATE_KEY_1}"
+    from: "${ACCOUNT_PRIVATE_KEY_1}"
 
 paths:
   contracts: "contracts"

@@ -156,12 +156,31 @@ deterministik), jadi hasilnya reproducible dan tidak memakai token LLM.
 `genvm_datetime` dipin per transaksi, jadi jendela taruhan dan waktu resolusi
 tidak perlu ditunggu.
 
-Akun studionet dibuat otomatis oleh SDK, jadi **tidak perlu private key**. Job
-`integration` di CI menjalankan suite ini pada setiap push. Untuk testnet
-(Bradbury) baru perlu kunci: simpan sebagai GitHub Actions secret
-`ACCOUNT_PRIVATE_KEY_1`, rujuk `${ACCOUNT_PRIVATE_KEY_1}` di
-`gltest.config.yaml`, dan buat `.env` dari secret itu di langkah CI. Jangan
-pernah menaruh kunci di repo atau di chat.
+Dua jalur jaringan tersedia di `gltest.config.yaml`:
+
+- `studionet` — akun dibuat otomatis, tanpa kunci; dipakai kalau secret belum ada.
+- `studionet_wallet` — memakai wallet sungguhan dari secret
+  `ACCOUNT_PRIVATE_KEY_1`. Job `integration` otomatis memilih jalur ini kalau
+  secret tersedia, jadi semua transaksi berasal dari wallet kamu.
+
+### Deploy sungguhan + bukti untuk portal
+
+Job **Deploy with the studionet wallet** menjalankan `tests/deploy/`:
+
+```bash
+# lokal, dengan kunci di .env
+gltest tests/deploy -v --network studionet_wallet
+```
+
+Hasilnya ditulis ke `deployments/prediction-market.studionet.json` dan `.md`:
+alamat kontrak, deployer, chain id 61999, waktu deploy, sha256 sumber, dan
+receipt transaksi. CI meng-commit file itu ke repo, jadi itulah bukti
+deployment yang bisa ditautkan saat submit ke portal GenLayer.
+
+Kunci tidak pernah masuk repo atau chat: simpan di *Settings → Secrets and
+variables → Actions* dengan nama `ACCOUNT_PRIVATE_KEY_1` (isi: private key hex
+wallet studionet kamu). `.env` sudah di-`.gitignore`. Untuk Bradbury, tambahkan
+entri jaringan dengan `${ACCOUNT_PRIVATE_KEY_1}` yang sama.
 
 ## Deploy
 
