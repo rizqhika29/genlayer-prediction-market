@@ -1,0 +1,71 @@
+name: GenVM CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install GenVM tooling
+        run: pip install -r requirements.txt
+
+      - name: Cache GenVM SDK artifacts
+        uses: actions/cache@v4
+        with:
+          # The SDK version comes from the contract's Depends header, not from
+          # the contract code, so a stable key is enough.
+          path: ~/.cache/genvm-linter
+          key: genvm-linter-v1
+
+      - name: Lint and validate contract
+        run: genvm-lint check contracts/prediction_market.py
+
+      - name: Extract ABI schema
+        run: |
+          mkdir -p abi
+          genvm-lint schema contracts/prediction_market.py --output abi/prediction_market.json
+
+      - name: Upload ABI
+        uses: actions/upload-artifact@v4
+        with:
+          name: abi
+          path: abi/
+
+  test:
+    name: Direct mode tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install GenVM tooling
+        run: pip install -r requirements.txt
+
+      - name: Cache downloaded GenVM SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/gltest-direct
+          key: gltest-direct-sdk-v1
+
+      - name: Run direct mode tests
+        run: pytest tests/direct -v --tb=short
