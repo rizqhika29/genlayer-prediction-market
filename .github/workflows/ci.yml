@@ -112,6 +112,8 @@ jobs:
     # Real deployment from the wallet in ACCOUNT_PRIVATE_KEY_1. The record it
     # writes under deployments/ is committed back to the repo for the portal
     # submission. Without the secret the job reports a warning and does nothing.
+    # Manual only, so the recorded address stays stable between pushes.
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     runs-on: ubuntu-latest
