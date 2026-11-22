@@ -203,7 +203,19 @@ Two config files:
   bettor and the outsider are deterministic child keys derived from it, so one
   secret is enough for the three-party tests.
 
-### 3. Deployment test
+### 3. Method coverage (studionet)
+
+`tests/integration/test_methods_e2e.py` calls every remaining public method once
+on the real network with the wallet, including the GEN transfer that direct mode
+cannot simulate.
+
+| Test | What it checks |
+|---|---|
+| `test_every_view_answers` | count, question, criteria, sources, creator, outcome, reason, source url, resolve/refund windows, pools, balance, owed and `get_now` all answer |
+| `test_stake_and_payout_views` | `get_my_stake`, `get_my_side`, `has_claimed`, `get_stake`, `get_yes_pool` and `preview_payout` after a stake and a resolution |
+| `test_withdraw_moves_the_gen` | `claim` credits the winner, `withdraw()` sends the GEN and the owed balance returns to zero |
+
+### 4. Deployment test
 
 `gltest tests/deploy -v --network studionet_wallet` — deploys the contract from
 the configured wallet and writes `deployments/prediction-market.studionet.json`
